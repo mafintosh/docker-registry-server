@@ -10,23 +10,36 @@ var levelup = require('levelup')
 var leveldown = require('leveldown')
 var sublevel = require('level-sublevel')
 var memdown = require('memdown')
+var thunky = require('thunky')
 
 module.exports = function(opts) {
   if (!opts) opts = {}
 
   var server = root()
-  var cwd = opts.cwd || '.'
+  var cwd = opts.cwd || 'docker-registry'
   var layers = path.join(cwd, 'layers')
+  var db
 
   // setup db
 
-  var db = sublevel(levelup(path.join(cwd, 'db'), {valueEncoding:'json', db: process.env.MEMDOWN ? memdown : leveldown}))
+  var setup = thunky(function(cb) {
+    mkdirp(layers, function() {
+      db = sublevel(levelup(path.join(cwd, 'db'), {valueEncoding:'json', db: process.env.MEMDOWN ? memdown : leveldown}))
 
-  db.images = db.sublevel('images')
-  db.images.checksums = db.images.sublevel('checksums')
+      db.images = db.sublevel('images')
+      db.images.checksums = db.images.sublevel('checksums')
 
-  db.repositories = db.sublevel('repositories')
-  db.repositories.tags = db.repositories.sublevel('tags')
+      db.repositories = db.sublevel('repositories')
+      db.repositories.tags = db.repositories.sublevel('tags')
+
+      server.emit('setup')
+      cb()
+    })
+  })
+
+  server.all(function(req, res, next) {
+    setup(next)
+  })
 
   // library paths
 
@@ -77,7 +90,7 @@ module.exports = function(opts) {
     req.on('json', function(data) {
       db.images.put(id, data, function(err) {
         if (err) return res.error(err)
-        server.emit('image', id, data)
+        server.emit('image', data)
         res.end()
       })
     })
@@ -90,22 +103,20 @@ module.exports = function(opts) {
     if (!sum) return res.error(400, 'checksum is required')
     db.images.checksums.put(id, sum, function(err) {
       if (err) return res.error(err)
-      server.emit('checksum', id, sum)
+      server.emit('checksum', {id:id, hash:sum})
       res.end()
     })
   })
 
   server.put('/v1/images/{id}/layer', function(req, res) {
     var id = req.params.id
+    var p = path.join(layers, id)
+    var layer = fs.createWriteStream(p)
 
-    mkdirp(layers, function(err) {
+    pump(req, layer, function(err) {
       if (err) return res.error(err)
-      var layer = fs.createWriteStream(path.join(layers, id))
-      pump(req, layer, function(err) {
-        if (err) return res.error(err)
-        server.emit('layer', id)
-        res.end()
-      })
+      server.emit('layer', {id:id, path:p})
+      res.end()
     })
   })
 
@@ -128,24 +139,30 @@ module.exports = function(opts) {
   })
 
   server.del('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
-    var tag = req.params.namespace+'/'+req.params.name+'@'+req.params.tag
+    var namespace = req.params.namespace
+    var name = req.params.name
+    var tag = req.params.tag
+    var key = namespace+'/'+name+'@'+tag
 
-    db.repositories.tags.get(tag, function(_, id) {
-      db.repositories.tags.del(tag, function(err) {
+    db.repositories.tags.get(key, function(_, id) {
+      db.repositories.tags.del(key, function(err) {
         if (err) return res.error(err)
-        if (id) server.emit('untag', id, tag)
+        if (id) server.emit('untag', {id:id, namespace:namespace, name:name, tag:tag})
         res.end()
       })
     })
   })
 
   server.put('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
-    var tag = req.params.namespace+'/'+req.params.name+'@'+req.params.tag
+    var namespace = req.params.namespace
+    var name = req.params.name
+    var tag = req.params.tag
+    var key = namespace+'/'+name+'@'+tag
 
     req.on('json', function(id) {
-      db.repositories.tags.put(tag, id, function(err) {
+      db.repositories.tags.put(key, id, function(err) {
         if (err) return res.error(err)
-        server.emit('tag', id, tag)
+        server.emit('tag', {id:id, namespace:namespace, name:name, tag:tag})
         res.end()
       })
     })

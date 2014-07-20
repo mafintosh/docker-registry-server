@@ -1,27 +1,36 @@
 #!/usr/bin/env node
 
 var registry = require('./')
+var minimist = require('minimist')
+
+var argv = minimist(process.argv, {alias:{p:'port'}})
 var server = registry()
 
 var log = function(ns) {
-  ns += '     '.slice(ns.length)+' :'
+  ns += '        '.slice(ns.length)+' :'
   console.log(Array.prototype.join.call(arguments, ' '))
 }
 
-server.on('tag', function(id, tag) {
-  log('tag', id, tag)
+var id = function(obj) {
+  return obj.id.slice(0,12)
+}
+
+server.on('tag', function(image) {
+  log('tag', id(image), image.name+'@'+image.tag)
 })
 
-server.on('layer', function(id) {
-  log('layer', id)
+server.on('layer', function(layer) {
+  log('layer', id(layer), layer.path)
 })
 
-server.on('checksum', function(id, checksum) {
-  log('sum', id, checksum)
+server.on('checksum', function(image) {
+  log('checksum', id(image), image.hash)
 })
 
-server.on('image', function(id, data) {
-  log('image', id)
+server.on('image', function(image) {
+  log('image', id(image), image.name)
 })
 
-server.listen(8000)
+server.listen(argv.port || 8000, function() {
+  console.log('Server is listening on port '+server.address().port)
+})
