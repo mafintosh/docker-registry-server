@@ -31,6 +31,6 @@ server.on('image', function(image) {
   log('image', id(image), image.name)
 })
 
-server.listen(argv.port || 8000, function() {
+server.listen(argv.port || process.env.PORT || 8000, function() {
   console.log('Server is listening on port '+server.address().port)
 })
