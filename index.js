@@ -223,7 +223,7 @@ module.exports = function(opts) {
     if (err && err.notFound) res.statusCode = 404
     res.send({
       status: res.statusCode,
-      error: err.message
+      error: err.message.trim()
     })
   })
 
