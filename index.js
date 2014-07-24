@@ -122,7 +122,7 @@ module.exports = function(opts) {
 
   server.get('/v1/images/{id}/layer', function(req, res) {
     var id = req.params.id
-    var layer = fs.createReadStream(path.join('layers', id))
+    var layer = fs.createReadStream(path.join(layers, id))
 
     pump(layer, res)
   })
