@@ -212,6 +212,13 @@ module.exports = function(opts) {
     })
   })
 
+  server.get('/', function(req, res) {
+    res.send({
+      service: 'docker-registry'
+      version: require('./package').version
+    })
+  })
+
   // misc stuff
 
   server.get('/v1/_ping', function(req, res) {
