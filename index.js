@@ -11,6 +11,8 @@ var leveldown = require('leveldown')
 var sublevel = require('level-sublevel')
 var memdown = require('memdown')
 var thunky = require('thunky')
+var tar = require('tar-stream')
+var zlib = require('zlib')
 
 module.exports = function(opts) {
   if (!opts) opts = {}
@@ -59,6 +61,40 @@ module.exports = function(opts) {
       })
     })
   }
+
+  // non official file api
+  server.get('/v1/files/{id}/*', function(req, res) {
+    var id = req.params.id
+    var filename = req.params.glob
+
+    var search = function(id) {
+      var layer = fs.createReadStream(path.join(layers, id))
+      var extract = tar.extract()
+      var found = false
+
+      var ondone = function() {
+        if (found) return
+        db.images.get(id, function(err, img) {
+          if (err) return res.error(err)
+          if (!img.parent) return res.error(404, filename+' not found')
+          search(img.parent)
+        })
+      }
+
+      extract.on('entry', function(header, stream, next) {
+        if (header.type !== 'file' || header.name !== filename) return next()
+
+        found = true
+        pump(stream, res, function() {
+          extract.destroy()
+        })
+      })
+
+      pump(layer, zlib.createGunzip(), extract, ondone)
+    }
+
+    search(id)
+  })
 
   server.get('/v1/images/{id}/ancestry', function(req, res) {
     var id = req.params.id
@@ -214,7 +250,7 @@ module.exports = function(opts) {
 
   server.get('/', function(req, res) {
     res.send({
-      service: 'docker-registry'
+      service: 'docker-registry',
       version: require('./package').version
     })
   })
