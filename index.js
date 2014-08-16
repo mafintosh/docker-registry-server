@@ -12,6 +12,7 @@ var sublevel = require('level-sublevel')
 var memdown = require('memdown')
 var thunky = require('thunky')
 var tar = require('tar-stream')
+var xtend = require('xtend')
 var zlib = require('zlib')
 
 module.exports = function(opts) {
@@ -62,6 +63,13 @@ module.exports = function(opts) {
     })
   }
 
+  var emit = function(type, data) {
+    server.emit(type, data)
+    server.emit('event', xtend(data, {type:type}))
+  }
+
+  server.setMaxListeners(0)
+
   // non official file api
   server.get('/v1/files/{id}/*', function(req, res) {
     var id = req.params.id
@@ -96,6 +104,19 @@ module.exports = function(opts) {
     search(id)
   })
 
+  // non official events api
+  server.get('/v1/events', function(req, res) {
+    var onevent = function(e) {
+      res.write(JSON.stringify(e)+'\n')
+    }
+
+    res.on('close', function() {
+      server.removeListener('event', onevent)
+    })
+
+    server.on('event', onevent)
+  })
+
   server.get('/v1/images/{id}/ancestry', function(req, res) {
     var id = req.params.id
 
@@ -126,7 +147,7 @@ module.exports = function(opts) {
     req.on('json', function(data) {
       db.images.put(id, data, function(err) {
         if (err) return res.error(err)
-        server.emit('image', data)
+        emit('image', data)
         res.end()
       })
     })
@@ -139,7 +160,7 @@ module.exports = function(opts) {
     if (!sum) return res.error(400, 'checksum is required')
     db.images.checksums.put(id, sum, function(err) {
       if (err) return res.error(err)
-      server.emit('checksum', {id:id, hash:sum})
+      emit('checksum', {id:id, hash:sum})
       res.end()
     })
   })
@@ -151,7 +172,7 @@ module.exports = function(opts) {
 
     pump(req, layer, function(err) {
       if (err) return res.error(err)
-      server.emit('layer', {id:id, path:p})
+      emit('layer', {id:id, path:p})
       res.end()
     })
   })
@@ -183,7 +204,7 @@ module.exports = function(opts) {
     db.repositories.tags.get(key, function(_, id) {
       db.repositories.tags.del(key, function(err) {
         if (err) return res.error(err)
-        if (id) server.emit('untag', {id:id, namespace:namespace, name:name, tag:tag})
+        if (id) emit('untag', {id:id, namespace:namespace, name:name, tag:tag})
         res.end()
       })
     })
@@ -198,7 +219,7 @@ module.exports = function(opts) {
     req.on('json', function(id) {
       db.repositories.tags.put(key, id, function(err) {
         if (err) return res.error(err)
-        server.emit('tag', {id:id, namespace:namespace, name:name, tag:tag})
+        emit('tag', {id:id, namespace:namespace, name:name, tag:tag})
         res.end()
       })
     })
