@@ -65,7 +65,7 @@ module.exports = function(opts) {
 
   var emit = function(type, data) {
     server.emit(type, data)
-    server.emit('event', xtend(data, {type:type}))
+    server.emit('event', xtend({type:type}, data))
   }
 
   server.setMaxListeners(0)
@@ -106,7 +106,10 @@ module.exports = function(opts) {
 
   // non official events api
   server.get('/v1/events', function(req, res) {
+    res.setTimeout(0) // not perfect but lets just rely on this for now
+
     var onevent = function(e) {
+      if (e.type === 'image') e = {type:'image', id:id, parent:e.parent} // dont send too much data
       res.write(JSON.stringify(e)+'\n')
     }
 
