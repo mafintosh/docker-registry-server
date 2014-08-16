@@ -109,7 +109,7 @@ module.exports = function(opts) {
     res.setTimeout(0) // not perfect but lets just rely on this for now
 
     var onevent = function(e) {
-      if (e.type === 'image') e = {type:'image', id:id, parent:e.parent} // dont send too much data
+      if (e.type === 'image') e = {type:'image', id:e.id, parent:e.parent} // dont send too much data
       res.write(JSON.stringify(e)+'\n')
     }
 
