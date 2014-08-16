@@ -263,7 +263,6 @@ module.exports = function(opts) {
   })
 
   server.error(function(req, res, err) {
-    if (err && err.notFound) res.statusCode = 404
     res.send({
       status: res.statusCode,
       error: err.message.trim()
