@@ -31,9 +31,11 @@ module.exports = function(opts) {
 
       db.images = db.sublevel('images')
       db.images.checksums = db.images.sublevel('checksums')
+      db.images.blobs = db.sublevel('blobs')
 
       db.repositories = db.sublevel('repositories')
       db.repositories.tags = db.repositories.sublevel('tags')
+
 
       server.emit('setup')
       cb()
@@ -70,8 +72,24 @@ module.exports = function(opts) {
 
   server.setMaxListeners(0)
 
+  // non official events api
+  server.get('/v1/events', function(req, res) {
+    res.setTimeout(0) // not perfect but lets just rely on this for now
+
+    var onevent = function(e) {
+      if (e.type === 'image') e = {type:'image', id:e.id, parent:e.parent} // dont send too much data
+      res.write(JSON.stringify(e)+'\n')
+    }
+
+    res.on('close', function() {
+      server.removeListener('event', onevent)
+    })
+
+    server.on('event', onevent)
+  })
+
   // non official file api
-  server.get('/v1/files/{id}/*', function(req, res) {
+  server.get('/v1/images/{id}/blob/*', function(req, res) {
     var id = req.params.id
     var filename = req.params.glob
 
@@ -90,7 +108,10 @@ module.exports = function(opts) {
       }
 
       extract.on('entry', function(header, stream, next) {
-        if (header.type !== 'file' || header.name !== filename) return next()
+        if (header.type !== 'file' || header.name !== filename) {
+          stream.resume()
+          return next()
+        }
 
         found = true
         pump(stream, res, function() {
@@ -102,22 +123,6 @@ module.exports = function(opts) {
     }
 
     search(id)
-  })
-
-  // non official events api
-  server.get('/v1/events', function(req, res) {
-    res.setTimeout(0) // not perfect but lets just rely on this for now
-
-    var onevent = function(e) {
-      if (e.type === 'image') e = {type:'image', id:e.id, parent:e.parent} // dont send too much data
-      res.write(JSON.stringify(e)+'\n')
-    }
-
-    res.on('close', function() {
-      server.removeListener('event', onevent)
-    })
-
-    server.on('event', onevent)
   })
 
   server.get('/v1/images/{id}/ancestry', function(req, res) {
@@ -133,13 +138,17 @@ module.exports = function(opts) {
 
   server.get('/v1/images/{id}/json', function(req, res) {
     var id = req.params.id
+    var file = path.join(layers, id)
 
     db.images.checksums.get(id, function(err, checksum) {
       if (err) return res.error(err)
       res.setHeader('X-Docker-Checksum', checksum)
-      db.images.get(id, function(err, data) {
-        if (err) return res.error(err)
-        res.send(data)
+      fs.stat(file, function(_, stat) {
+        if (stat) res.setHeader('X-Docker-Size', stat.size)
+        db.images.get(id, function(err, data) {
+          if (err) return res.error(err)
+          res.send(data)
+        })
       })
     })
   })
@@ -170,21 +179,25 @@ module.exports = function(opts) {
 
   server.put('/v1/images/{id}/layer', function(req, res) {
     var id = req.params.id
-    var p = path.join(layers, id)
-    var layer = fs.createWriteStream(p)
+    var file = path.join(layers, id)
+    var layer = fs.createWriteStream(file)
 
     pump(req, layer, function(err) {
       if (err) return res.error(err)
-      emit('layer', {id:id, path:p})
+      emit('layer', {id:id, path:file})
       res.end()
     })
   })
 
   server.get('/v1/images/{id}/layer', function(req, res) {
     var id = req.params.id
-    var layer = fs.createReadStream(path.join(layers, id))
+    var file = path.join(layers, id)
 
-    pump(layer, res)
+    fs.stat(file, function(err, stat) {
+      if (err) return res.error(404)
+      res.setHeader('Content-Length', stat.size)
+      pump(fs.createReadStream(file), res)
+    })
   })
 
   // repo stuff
@@ -243,11 +256,12 @@ module.exports = function(opts) {
   })
 
   server.get('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
-    var tag = req.params.namespace+'/'+req.params.name+'/'+req.params.tag
+    var tag = req.params.namespace+'/'+req.params.name+'@'+req.params.tag
 
     db.repositories.tags.get(tag, function(err, id) {
       if (err) return res.error(err)
-      res.send(id)
+      res.setHeader('Content-Length', Buffer.byteLength(id))
+      res.end(id)
     })
   })
 
