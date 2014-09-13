@@ -1,10 +1,14 @@
 # docker-registry-server
 
-Docker registry implemented in Node.js
+Docker registry implemented in Node.js.
 
 ```
 npm install -g docker-registry-server
 ```
+
+## Disclamer
+
+WIP - things will change rapidly
 
 ## Usage
 
