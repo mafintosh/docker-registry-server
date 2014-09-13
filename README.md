@@ -1,9 +1,9 @@
-# docker-registry
+# docker-registry-server
 
 Docker registry implemented in Node.js
 
 ```
-npm install -g docker-registry
+npm install -g docker-registry-server
 ```
 
 ## Usage
@@ -11,10 +11,10 @@ npm install -g docker-registry
 To start it run
 
 ```
-docker-registry
+docker-registry-server
 ```
 
-Currently data will be stored in `./docker-registry`
+Currently data will be stored in `./docker-registry-server`
 
 ## License
 

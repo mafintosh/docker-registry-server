@@ -1,5 +1,5 @@
 {
-  "name": "docker-registry",
+  "name": "docker-registry-server",
   "version": "0.0.0",
   "description": "docker registry server implemented in node",
   "main": "index.js",
@@ -23,15 +23,14 @@
   "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "./bin.js",
-    "deploy": "./deploy.sh"
+    "start": "./bin.js"
   },
   "bin": {
-    "docker-registry": "./bin.js"
+    "docker-registry-server": "./bin.js"
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/mafintosh/docker-registry.git"
+    "url": "git://github.com/mafintosh/docker-registry-server.git"
   },
   "keywords": [
     "docker",
@@ -41,7 +40,7 @@
   "author": "Mathias Buus",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mafintosh/docker-registry/issues"
+    "url": "https://github.com/mafintosh/docker-registry-server/issues"
   },
-  "homepage": "https://github.com/mafintosh/docker-registry"
+  "homepage": "https://github.com/mafintosh/docker-registry-server"
 }

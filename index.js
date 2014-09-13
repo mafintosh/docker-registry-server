@@ -19,7 +19,7 @@ module.exports = function(opts) {
   if (!opts) opts = {}
 
   var server = root()
-  var cwd = opts.cwd || 'docker-registry'
+  var cwd = opts.cwd || 'docker-registry-server'
   var layers = path.join(cwd, 'layers')
   var db
 
@@ -288,7 +288,7 @@ module.exports = function(opts) {
 
   server.get('/', function(req, res) {
     res.send({
-      service: 'docker-registry',
+      service: 'docker-registry-server',
       version: require('./package').version
     })
   })
