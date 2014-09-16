@@ -14,6 +14,7 @@ var thunky = require('thunky')
 var tar = require('tar-stream')
 var xtend = require('xtend')
 var zlib = require('zlib')
+var cors = require('cors')
 
 module.exports = function(opts) {
   if (!opts) opts = {}
@@ -45,6 +46,8 @@ module.exports = function(opts) {
   server.all(function(req, res, next) {
     setup(next)
   })
+
+  server.all(cors())
 
   // library paths
 
