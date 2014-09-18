@@ -1,314 +1,316 @@
-var root = require('root')
-var from = require('from2')
-var fs = require('fs')
-var mkdirp = require('mkdirp')
-var path = require('path')
-var pump = require('pump')
-var JSONStream = require('JSONStream')
-var through = require('through2')
-var levelup = require('levelup')
-var leveldown = require('leveldown')
+var blobs = require('fs-blob-store')
+var level = require('level')
 var sublevel = require('level-sublevel')
-var memdown = require('memdown')
-var thunky = require('thunky')
+var path = require('path')
+var mkdirp = require('mkdirp')
+var events = require('events')
+var through = require('through2')
+var parse = require('docker-parse-image')
+var from = require('from2')
+var pump = require('pump')
+var pumpify = require('pumpify')
 var tar = require('tar-stream')
-var xtend = require('xtend')
 var zlib = require('zlib')
-var cors = require('cors')
+var union = require('sorted-union-stream')
+var lexint = require('lexicographic-integer')
+var eos = require('end-of-stream')
+var union = require('sorted-union-stream')
 
-module.exports = function(opts) {
+var IGNORE_TAR_FILES = ['./', '.wh..wh.aufs', '.wh..wh.orph/', '.wh..wh.plnk/']
+
+var toTagKey = function(tag) {
+  tag = typeof tag === 'string' ? parse(tag) : tag
+  return (tag.namespace || 'library')+'/'+tag.repository+':'+(tag.tag || 'latest')
+}
+
+var toSortKey = function(data) {
+  return data.key.slice(64)
+}
+
+var toIndexKey = function(id, name) {
+  var depth = name.split('/').length-1
+  return id+'/'+lexint.pack(depth, 'hex')+name
+}
+
+var error = function(status, message) {
+  var err = new Error(message)
+  err.status = status
+  return err
+}
+
+var peek = function(stream, cb) { // TODO: use module when not a plane
+  var result = null
+
+  stream.on('data', function(data) {
+    result = data
+  })
+
+  eos(stream, function(err) {
+    if (err) return cb(err)
+    cb(null, result)
+  })
+}
+
+var noop = function() {}
+
+var Registry = function(opts) {
+  if (!(this instanceof Registry)) return new Registry(opts)
   if (!opts) opts = {}
 
-  var server = root()
-  var cwd = opts.cwd || 'docker-registry-server'
-  var layers = path.join(cwd, 'layers')
-  var db
+  var dir = opts.dir || '.'
 
-  // setup db
-
-  var setup = thunky(function(cb) {
-    mkdirp(layers, function() {
-      db = sublevel(levelup(path.join(cwd, 'db'), {valueEncoding:'json', db: process.env.MEMDOWN ? memdown : leveldown}))
-
-      db.images = db.sublevel('images')
-      db.images.checksums = db.images.sublevel('checksums')
-      db.images.blobs = db.sublevel('blobs')
-
-      db.repositories = db.sublevel('repositories')
-      db.repositories.tags = db.repositories.sublevel('tags')
-
-
-      server.emit('setup')
-      cb()
-    })
-  })
-
-  server.all(function(req, res, next) {
-    setup(next)
-  })
-
-  server.all(cors())
-
-  // library paths
-
-  server.all('/v1/repositories/{name}', '/v1/repositories/library/{name}')
-  server.all('/v1/repositories/{name}/images', '/v1/repositories/library/{name}/images')
-  server.all('/v1/repositories/{name}/tags/*', '/v1/repositories/library/{name}/tags/{*}')
-
-  // images
-
-  var ancestry = function(parent) {
-    return from.obj(function(size, next) {
-      if (!parent) return next(null, null)
-      db.images.get(parent, function(err, data) {
-        if (err) return next(err)
-        parent = data.parent
-        next(null, data.id || null)
-      })
-    })
-  }
-
-  var emit = function(type, data) {
-    server.emit(type, data)
-    server.emit('event', xtend({type:type}, data))
-  }
-
-  server.setMaxListeners(0)
-
-  // non official events api
-  server.get('/v1/events', function(req, res) {
-    res.setTimeout(0) // not perfect but lets just rely on this for now
-
-    var onevent = function(e) {
-      if (e.type === 'image') e = {type:'image', id:e.id, parent:e.parent} // dont send too much data
-      res.write(JSON.stringify(e)+'\n')
-    }
-
-    res.on('close', function() {
-      server.removeListener('event', onevent)
-    })
-
-    server.on('event', onevent)
-  })
-
-  // non official file api
-  server.get('/v1/images/{id}/blob/*', function(req, res) {
-    var id = req.params.id
-    var filename = req.params.glob
-
-    var search = function(id) {
-      var layer = fs.createReadStream(path.join(layers, id))
-      var extract = tar.extract()
-      var found = false
-
-      var ondone = function() {
-        if (found) return
-        db.images.get(id, function(err, img) {
-          if (err) return res.error(err)
-          if (!img.parent) return res.error(404, filename+' not found')
-          search(img.parent)
-        })
-      }
-
-      extract.on('entry', function(header, stream, next) {
-        if (header.type !== 'file' || header.name !== filename) {
-          stream.resume()
-          return next()
-        }
-
-        found = true
-        pump(stream, res, function() {
-          extract.destroy()
-        })
-      })
-
-      pump(layer, zlib.createGunzip(), extract, ondone)
-    }
-
-    search(id)
-  })
-
-  server.get('/v1/images/{id}/ancestry', function(req, res) {
-    var id = req.params.id
-
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    pump(
-      ancestry(id),
-      JSONStream.stringify(),
-      res
-    )
-  })
-
-  server.get('/v1/images/{id}/json', function(req, res) {
-    var id = req.params.id
-    var file = path.join(layers, id)
-
-    db.images.checksums.get(id, function(err, checksum) {
-      if (err) return res.error(err)
-      res.setHeader('X-Docker-Checksum', checksum)
-      fs.stat(file, function(_, stat) {
-        if (stat) res.setHeader('X-Docker-Size', stat.size)
-        db.images.get(id, function(err, data) {
-          if (err) return res.error(err)
-          res.send(data)
-        })
-      })
-    })
-  })
-
-  server.put('/v1/images/{id}/json', function(req, res) {
-    var id = req.params.id
-
-    req.on('json', function(data) {
-      db.images.put(id, data, function(err) {
-        if (err) return res.error(err)
-        emit('image', data)
-        res.end()
-      })
-    })
-  })
-
-  server.put('/v1/images/{id}/checksum', function(req, res) {
-    var id = req.params.id
-    var sum = req.headers['x-docker-checksum-payload'] || null
-
-    if (!sum) return res.error(400, 'checksum is required')
-    db.images.checksums.put(id, sum, function(err) {
-      if (err) return res.error(err)
-      emit('checksum', {id:id, hash:sum})
-      res.end()
-    })
-  })
-
-  server.put('/v1/images/{id}/layer', function(req, res) {
-    var id = req.params.id
-    var file = path.join(layers, id)
-    var layer = fs.createWriteStream(file)
-
-    pump(req, layer, function(err) {
-      if (err) return res.error(err)
-      emit('layer', {id:id, path:file})
-      res.end()
-    })
-  })
-
-  server.get('/v1/images/{id}/layer', function(req, res) {
-    var id = req.params.id
-    var file = path.join(layers, id)
-
-    fs.stat(file, function(err, stat) {
-      if (err) return res.error(404)
-      res.setHeader('Content-Length', stat.size)
-      pump(fs.createReadStream(file), res)
-    })
-  })
-
-  // repo stuff
-
-  server.put('/v1/repositories/{namespace}/{name}', function(req, res) {
-    req.on('json', function(data) {
-      res.setHeader('WWW-Authenticate', 'Token signature=123abc,repository="test",access=write')
-      res.setHeader('X-Docker-Token', 'signature=123abc,repository="test",access=write')
-      res.setHeader('X-Docker-Endpoints', req.headers.host)
-      res.end()
-    })
-  })
-
-  server.del('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
-    var namespace = req.params.namespace
-    var name = req.params.name
-    var tag = req.params.tag
-    var key = namespace+'/'+name+'@'+tag
-
-    db.repositories.tags.get(key, function(_, id) {
-      db.repositories.tags.del(key, function(err) {
-        if (err) return res.error(err)
-        if (id) emit('untag', {id:id, namespace:namespace, name:name, tag:tag})
-        res.end()
-      })
-    })
-  })
-
-  server.put('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
-    var namespace = req.params.namespace
-    var name = req.params.name
-    var tag = req.params.tag
-    var key = namespace+'/'+name+'@'+tag
-
-    req.on('json', function(id) {
-      db.repositories.tags.put(key, id, function(err) {
-        if (err) return res.error(err)
-        emit('tag', {id:id, namespace:namespace, name:name, tag:tag})
-        res.end()
-      })
-    })
-  })
-
-  server.get('/v1/repositories/{namespace}/{name}/tags', function(req, res) {
-    var id = req.params.namespace+'/'+req.params.name
-
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    pump(
-      db.repositories.tags.createReadStream({start:id+'@', end:id+'@~'}),
-      through.obj(function(data, enc, cb) {
-        cb(null, [data.key.split('@').pop(), data.value])
-      }),
-      JSONStream.stringifyObject(),
-      res
-    )
-  })
-
-  server.get('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
-    var tag = req.params.namespace+'/'+req.params.name+'@'+req.params.tag
-
-    db.repositories.tags.get(tag, function(err, id) {
-      if (err) return res.error(err)
-      res.setHeader('Content-Length', Buffer.byteLength(id))
-      res.end(id)
-    })
-  })
-
-  server.put('/v1/repositories/{namespace}/{name}/images', function(req, res) {
-    var id = req.params.namespace+'/'+req.params.name
-
-    req.on('json', function(list) {
-      db.images.put(id, list, function(err) {
-        if (err) return res.error(err)
-        res.statusCode = 204
-        res.end()
-      })
-    })
-  })
-
-  server.get('/v1/repositories/{namespace}/{name}/images', function(req, res) {
-    var id = req.params.namespace+'/'+req.params.name
-
-    db.images.get(id, function(err, list) {
-      if (err) return res.error(err)
-      res.send(list)
-    })
-  })
-
-  server.get('/', function(req, res) {
-    res.send({
-      service: 'docker-registry-server',
-      version: require('./package').version
-    })
-  })
-
-  // misc stuff
-
-  server.get('/v1/_ping', function(req, res) {
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.send('true')
-  })
-
-  server.error(function(req, res, err) {
-    res.send({
-      status: res.statusCode,
-      error: err.message.trim()
-    })
-  })
-
-  return server
+  this.blobs = opts.blobs || blobs(path.join(dir, 'layers'))
+  this.db = sublevel(opts.db || level(path.join(dir, 'db')))
+  this.db.images = this.db.sublevel('images')
+  this.db.tags = this.db.sublevel('tags')
+  this.db.index = this.db.sublevel('index')
 }
+
+Registry.prototype.createLayerReadStream = function(id) {
+  return this.blobs.createReadStream({key:id})
+}
+
+Registry.prototype.createIndexingStream = function(id) {
+  var self = this
+  var extract = tar.extract()
+  var entries = 0
+  var batch = []
+
+  var flush = function(cb) {
+    self.db.index.batch(batch, function(err) {
+      batch = []
+      cb(err)
+    })
+  }
+
+  extract.on('entry', function(entry, stream, cb) {
+    stream.resume()
+
+    if (IGNORE_TAR_FILES.indexOf(entry.name) !== -1) return cb()
+    if (!/^\//.test(entry.name)) entry.name = '/'+entry.name
+
+    var doc = {
+      name: entry.name,
+      type: entry.type,
+      size: entry.size,
+      mode: entry.mode,
+      mtime: entry.mtime.getTime(),
+      image: id,
+      linkname: entry.linkname || undefined
+    }
+
+    var name = doc.name
+    if (name !== '/') name = name.replace(/\/$/, '')
+
+    entries++
+    batch.push({type:'put', key: toIndexKey(id, name), value: doc, valueEncoding: 'json'})
+
+    if (entries % 64 === 0) flush(cb)
+    else cb()
+  })
+
+  var stream = pumpify(zlib.createGunzip(), extract)
+
+  stream.on('prefinish', function() {
+    stream.cork()
+    batch.push({type:'put', key: id, value: {image:id, entries:entries}, valueEncoding: 'json'})
+    flush(function(err) {
+      if (err) return stream.destroy(err)
+      stream.uncork()
+    })
+  })
+
+  return stream
+}
+
+Registry.prototype.ensureIndex = function(id, cb) {
+  var self = this
+  this.db.index.get(id, function(err) {
+    if (!err) return cb()
+    pump(self.createLayerReadStream(id), self.createIndexingStream(id), cb)
+  })
+}
+
+Registry.prototype.clearIndex = function(cb) {
+  var self = this
+  var del = through.obj(function(key, enc, cb) {
+    self.db.index.del(key, cb)
+  })
+
+  pump(this.db.index.createKeyStream(), del, cb)
+}
+
+Registry.prototype.createLayerWriteStream = function(id, cb) {
+  if (!cb) cb = noop
+
+  // TODO: track size + checksum
+
+  var size = 0
+
+  var index = function(data, enc, cb) {
+    size += data.length
+    cb(null, data)
+  }
+
+  var finish = function(err) {
+    if (err) return cb(err)
+    cb()
+  }
+
+  return pumpify(through(index), this.blobs.createWriteStream({key:id}, finish))
+}
+
+Registry.prototype.createBlobStream = function(id, filename) {
+  var result = through()
+  var extract = tar.extract()
+  var name = filename.replace(/^\//, '')
+  var found = false
+
+  result.on('close', function() {
+    extract.destroy()
+  })
+
+  var entry = function(entry, stream, next) {
+    if (entry.name.replace(/^\//, '') !== name) {
+      stream.resume()
+      return next()
+    }
+
+    found = true
+    pump(stream, result, function() {
+      extract.destroy()
+    })
+  }
+
+  pump(this.createLayerReadStream(id), zlib.createGunzip(), extract.on('entry', entry), function() {
+    if (!found) result.destroy(error(404, 'Could not find '+filename))
+  })
+
+  return result
+}
+
+Registry.prototype.createTreeStream = function(id, prefix) {
+  if (!prefix) prefix = '/'
+  if (prefix[0] !== '/') prefix = '/'+prefix
+
+  var self = this
+  var ids = [] // bounded ~128 entries so it is ok to buffer
+  var destroyed = false
+  var ancestry = this.createAncestorStream(id)
+  var result = through.obj(function(data, enc, cb) {
+    cb(null, JSON.parse(data.value))
+  })
+
+  var index = through.obj(function(data, enc, cb) {
+    ids.unshift(data.id)
+    self.ensureIndex(data.id, cb)
+  })
+
+  result.on('close', function() {
+    destroyed = true
+  })
+
+  pump(ancestry, index, function(err) {
+    if (err || destroyed) return result.destroy(err)
+    if (!ids.length) return result.destroy(error(404, 'Could not find image '+id))
+
+    var stream = ids
+      .map(function(id) {
+        var key = toIndexKey(id, prefix)
+        return self.db.index.createReadStream({
+          start: key,
+          end: key+'~'
+        })
+      })
+      .reduce(function(a, b) {
+        return union(a, b, toSortKey)
+      })
+
+    pump(stream, result)
+  })
+
+  return result
+}
+
+Registry.prototype.set = function(id, data, cb) {
+  this.db.images.put(id, data, {valueEncoding:'json'}, cb)
+}
+
+Registry.prototype.get = function(id, cb) {
+  this.db.images.get(id, {valueEncoding:'json'}, cb)
+}
+
+Registry.prototype.resolve = function(tag, cb) {
+  var self = this
+  this.db.tags.get(toTagKey(tag), {valueEncoding:'utf-8'}, function(err, id) {
+    if (err && !err.notFound) return cb(err)
+    if (id) return self.get(id, cb)
+    if (tag.length !== 12) return cb(err)
+
+    var stream = self.db.images.createKeyStream({
+      start: tag,
+      limit: 1
+    })
+
+    peek(stream, function(err, key) {
+      if (err) return cb(err)
+      if (!key || key.indexOf(tag) !== 0) return self.get(tag, cb)
+      self.get(key, cb)
+    })
+  })
+}
+
+Registry.prototype.finalize = function(id, checksum, cb) {
+  // TODO
+}
+
+Registry.prototype.createAncestorStream = function(id) {
+  var imgs = this.db.images
+  return from.obj(function(size, cb) {
+    if (!id) return cb(null, null)
+    imgs.get(id, {valueEncoding:'json'}, function(err, result) {
+      if (err) return cb(err)
+      id = result.parent
+      cb(null, result)
+    })
+  })
+}
+
+Registry.prototype.createImageStream = function() {
+  return this.db.images.createValueStream({valueEncoding:'json'})
+}
+
+Registry.prototype.createTagStream = function(tag) {
+  if (tag && typeof tag === 'string') tag = parse(tag)
+  if (!tag) tag = {}
+
+  var prefix = ''
+
+  if (tag.namespace || tag.repository) prefix += (tag.namespace || 'library')+'/'
+  if (tag.repository) prefix += tag.repository+':'
+  if (tag.tag) prefix += tag.tag
+
+  return pump(
+    this.db.tags.createReadStream({
+      valueEncoding:'utf-8',
+      start: prefix,
+      end: prefix+'\xff'
+    }),
+    through.obj(function(data, enc, cb) {
+      cb(null, {
+        tag: data.key,
+        id: data.value
+      })
+    })
+  )
+}
+
+Registry.prototype.tag = function(tag, id, cb) {
+  this.db.tags.put(toTagKey(tag), id, {valueEncoding:'utf-8'}, cb)
+}
+
+Registry.prototype.untag = function(tag, id, cb) {
+  this.db.tags.del(toTagKey(tag), id, cb)
+}
+
+module.exports = Registry

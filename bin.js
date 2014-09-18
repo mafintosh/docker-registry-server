@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-var registry = require('./')
+var registry = require('./server')
 var minimist = require('minimist')
 
 var argv = minimist(process.argv, {alias:{p:'port'}})
