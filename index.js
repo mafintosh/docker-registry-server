@@ -16,6 +16,8 @@ var lexint = require('lexicographic-integer')
 var eos = require('end-of-stream')
 var union = require('sorted-union-stream')
 var crypto = require('crypto')
+var events = require('events')
+var util = require('util')
 
 var IGNORE_TAR_FILES = ['./', '.wh..wh.aufs', '.wh..wh.orph/', '.wh..wh.plnk/']
 
@@ -58,6 +60,8 @@ var Registry = function(opts) {
   if (!(this instanceof Registry)) return new Registry(opts)
   if (!opts) opts = {}
 
+  events.EventEmitter.call(this)
+
   var dir = opts.dir || '.'
 
   this.blobs = opts.blobs || blobs(path.join(dir, 'layers'))
@@ -67,6 +71,8 @@ var Registry = function(opts) {
   this.db.index = this.db.sublevel('index')
   this.db.metadata = this.db.sublevel('metadata')
 }
+
+util.inherits(Registry, events.EventEmitter)
 
 Registry.prototype.createLayerReadStream = function(id) {
   return this.blobs.createReadStream({key:id})
@@ -106,6 +112,7 @@ Registry.prototype.createIndexingStream = function(id) {
 
     entries++
     batch.push({type:'put', key: toIndexKey(id, name), value: doc, valueEncoding: 'json'})
+    self.emit('index', id)
 
     if (entries % 64 === 0) flush(cb)
     else cb()
@@ -168,7 +175,12 @@ Registry.prototype.createLayerWriteStream = function(id, cb) {
 
   var finish = function(err) {
     if (err) return cb(err)
-    self.db.metadata.put(id, {checksum: 'sha256:'+sha.digest('hex'), size: size}, {valueEncoding:'json'}, cb)
+    var metadata = {checksum: 'sha256:'+sha.digest('hex'), size: size}
+    self.db.metadata.put(id, metadata, {valueEncoding:'json'}, function(err) {
+      if (err) return cb(err)
+      self.emit('layer', id, metadata)
+      cb()
+    })
   }
 
   return pumpify(through(index), this.blobs.createWriteStream({key:id}, finish))
@@ -247,7 +259,13 @@ Registry.prototype.createTreeStream = function(id, prefix) {
 }
 
 Registry.prototype.set = function(id, data, cb) {
-  this.db.images.put(id, data, {valueEncoding:'json'}, cb)
+  if (!cb) cb = noop
+  var self = this
+  this.db.images.put(id, data, {valueEncoding:'json'}, function(err) {
+    if (err) return cb(err)
+    self.emit('image', id, data)
+    cb()
+  })
 }
 
 Registry.prototype.get = function(id, cb) {
@@ -287,11 +305,14 @@ Registry.prototype.verify = function(id, checksum, cb) {
   var self = this
   this.db.metadata.get(id, {valueEncoding:'json'}, function(err, metadata) {
     if (err) return cb(err)
-    if (metadata.checksum === checksum) return cb(null, true)
+    if (metadata.checksum === checksum) {
+      self.emit('verify', id)
+      return cb(null, true)
+    }
+
     self.db.images.del(id, function() {
       self.db.metadata.del(id, function() {
-        // TODO: unlink layer as well when remove lands in blob store
-        cb(null, false)
+        cb(null, false) // TODO: unlink layer as well when remove lands in blob store
      })
     })
   })
@@ -338,12 +359,24 @@ Registry.prototype.createTagStream = function(tag) {
   )
 }
 
-Registry.prototype.tag = function(tag, id, cb) {
-  this.db.tags.put(toTagKey(tag), id, {valueEncoding:'utf-8'}, cb)
+Registry.prototype.tag = function(id, tag, cb) {
+  if (!cb) cb = noop
+  var self = this
+  this.db.tags.put(toTagKey(tag), id, {valueEncoding:'utf-8'}, function(err) {
+    if (err) return cb(err)
+    self.emit('tag', id, tag)
+    cb()
+  })
 }
 
-Registry.prototype.untag = function(tag, id, cb) {
-  this.db.tags.del(toTagKey(tag), id, cb)
+Registry.prototype.untag = function(id, tag, cb) {
+  if (!cb) cb = noop
+  var self = this
+  this.db.tags.del(toTagKey(tag), id, function(err) {
+    if (err) return cb(err)
+    self.emit('untag', id, tag)
+    cb()
+  })
 }
 
 module.exports = Registry
