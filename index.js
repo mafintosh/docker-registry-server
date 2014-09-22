@@ -15,6 +15,7 @@ var union = require('sorted-union-stream')
 var lexint = require('lexicographic-integer')
 var eos = require('end-of-stream')
 var union = require('sorted-union-stream')
+var crypto = require('crypto')
 
 var IGNORE_TAR_FILES = ['./', '.wh..wh.aufs', '.wh..wh.orph/', '.wh..wh.plnk/']
 
@@ -64,6 +65,7 @@ var Registry = function(opts) {
   this.db.images = this.db.sublevel('images')
   this.db.tags = this.db.sublevel('tags')
   this.db.index = this.db.sublevel('index')
+  this.db.metadata = this.db.sublevel('metadata')
 }
 
 Registry.prototype.createLayerReadStream = function(id) {
@@ -143,18 +145,30 @@ Registry.prototype.clearIndex = function(cb) {
 Registry.prototype.createLayerWriteStream = function(id, cb) {
   if (!cb) cb = noop
 
-  // TODO: track size + checksum
-
+  var self = this
   var size = 0
+  var first = true
+  var sha = crypto.createHash('sha256')
+
+  var indexFirst = function(data, enc, cb) {
+    first = false
+    self.db.images.get(id, {valueEncoding:'utf-8'}, function(err, val) {
+      if (err) return cb(err)
+      sha.update(val.replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')+'\n') // crazy docker json
+      index(data, enc, cb)
+    })
+  }
 
   var index = function(data, enc, cb) {
+    if (first) return indexFirst(data, enc, cb)
     size += data.length
+    sha.update(data)
     cb(null, data)
   }
 
   var finish = function(err) {
     if (err) return cb(err)
-    cb()
+    self.db.metadata.put(id, {checksum: 'sha256:'+sha.digest('hex'), size: size}, {valueEncoding:'json'}, cb)
   }
 
   return pumpify(through(index), this.blobs.createWriteStream({key:id}, finish))
@@ -237,7 +251,14 @@ Registry.prototype.set = function(id, data, cb) {
 }
 
 Registry.prototype.get = function(id, cb) {
-  this.db.images.get(id, {valueEncoding:'json'}, cb)
+  var self = this
+  this.db.images.get(id, {valueEncoding:'json'}, function(err, image) {
+    if (err) return cb(err)
+    self.db.metadata.get(id, {valueEncoding:'json'}, function(err, metadata) {
+      if (err) return cb(err)
+      cb(null, image, metadata)
+    })
+  })
 }
 
 Registry.prototype.resolve = function(tag, cb) {
@@ -260,8 +281,20 @@ Registry.prototype.resolve = function(tag, cb) {
   })
 }
 
-Registry.prototype.finalize = function(id, checksum, cb) {
-  // TODO
+Registry.prototype.verify = function(id, checksum, cb) {
+  if (!cb) cb = noop
+
+  var self = this
+  this.db.metadata.get(id, {valueEncoding:'json'}, function(err, metadata) {
+    if (err) return cb(err)
+    if (metadata.checksum === checksum) return cb(null, true)
+    self.db.images.del(id, function() {
+      self.db.metadata.del(id, function() {
+        // TODO: unlink layer as well when remove lands in blob store
+        cb(null, false)
+     })
+    })
+  })
 }
 
 Registry.prototype.createAncestorStream = function(id) {

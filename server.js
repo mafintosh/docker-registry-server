@@ -10,6 +10,10 @@ module.exports = function() {
 
   // library paths
 
+  server.on('route', function(req, res) {
+    console.log('%s %s', req.method, req.url)
+  })
+
   server.all('/v1/repositories/{name}', '/v1/repositories/library/{name}')
   server.all('/v1/repositories/{name}/images', '/v1/repositories/library/{name}/images')
   server.all('/v1/repositories/{name}/tags/*', '/v1/repositories/library/{name}/tags/{*}')
@@ -29,8 +33,10 @@ module.exports = function() {
   })
 
   server.get('/v1/images/{id}/json', function(req, res) {
-    docker.get(req.params.id, function(err, image) {
+    docker.get(req.params.id, function(err, image, metadata) {
       if (err) return res.error(err)
+      res.setHeader('X-Docker-Size', metadata.size)
+      res.setHeader('X-Docker-Checksum', metadata.checksum)
       res.send(image)
     })
   })
@@ -77,7 +83,20 @@ module.exports = function() {
   })
 
   server.put('/v1/images/{id}/checksum', function(req, res) {
-    res.end()
+    docker.verify(req.params.id, req.headers['x-docker-checksum-payload'] || null, function(err, verified) {
+      if (err) return res.error(err)
+      if (!verified) return res.error(400, 'checksum mismatch') // TODO: is 400 the correct thing to send here?
+      res.end()
+    })
+  })
+
+  server.get('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
+    var tag = req.params.namespace+'/'+req.params.name+':'+req.params.tag
+
+    docker.resolve(tag, function(err, image) {
+      if (err) return res.error(err)
+      res.end(image.id)
+    })
   })
 
   server.put('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
@@ -98,8 +117,13 @@ module.exports = function() {
     })
   })
 
-  server.all(function(req, res) {
-    console.log(req.method, req.url)
+  server.error(function(req, res, err) {
+    if (err.status) res.statusCode = err.status
+    if (res.statusCode !== 404) console.error('Error: %s (%d)', err.message, res.statusCode)
+    res.send({
+      error: err.message,
+      status: err.status
+    })
   })
 
   return server
