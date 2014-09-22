@@ -6,6 +6,10 @@ var minimist = require('minimist')
 var argv = minimist(process.argv, {alias:{p:'port'}})
 var server = registry()
 
+server.on('route', function(req, res) {
+  console.log('%s %s', req.method, req.url)
+})
+
 var log = function(ns) {
   ns += '        '.slice(ns.length)+' :'
   console.log(Array.prototype.join.call(arguments, ' '))

@@ -10,10 +10,6 @@ module.exports = function() {
 
   // library paths
 
-  server.on('route', function(req, res) {
-    console.log('%s %s', req.method, req.url)
-  })
-
   server.all('/v1/repositories/{name}', '/v1/repositories/library/{name}')
   server.all('/v1/repositories/{name}/images', '/v1/repositories/library/{name}/images')
   server.all('/v1/repositories/{name}/tags/*', '/v1/repositories/library/{name}/tags/{*}')
