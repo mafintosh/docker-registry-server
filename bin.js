@@ -5,34 +5,26 @@ var minimist = require('minimist')
 
 var argv = minimist(process.argv, {alias:{p:'port'}})
 var server = registry()
+var client = server.client
 
-server.on('route', function(req, res) {
-  console.log('%s %s', req.method, req.url)
-})
-
-var log = function(ns) {
-  ns += '        '.slice(ns.length)+' :'
-  console.log(Array.prototype.join.call(arguments, ' '))
+var shorten = function(id) {
+  return id.slice(0,12)
 }
 
-var id = function(obj) {
-  return obj.id.slice(0,12)
-}
-
-server.on('tag', function(image) {
-  log('tag', id(image), image.name+'@'+image.tag)
+client.on('tag', function(id, tag) {
+  console.log('%s - tagged with %s', shorten(id), tag)
 })
 
-server.on('layer', function(layer) {
-  log('layer', id(layer), layer.path)
+client.on('layer', function(id, metadata) {
+  console.log('%s - added layer (%s)', shorten(id), metadata.checksum)
 })
 
-server.on('checksum', function(image) {
-  log('checksum', id(image), image.hash)
+client.on('image', function(id, data) {
+  console.log('%s - added image data', shorten(id))
 })
 
-server.on('image', function(image) {
-  log('image', id(image), image.name)
+client.on('verify', function(id) {
+  console.log('%s - verified using client checksum', shorten(id))
 })
 
 server.listen(argv.port || process.env.PORT || 8000, function() {
