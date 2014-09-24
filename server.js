@@ -112,6 +112,19 @@ module.exports = function() {
     })
   })
 
+  server.get('/v1/repositories/{namespace}/{name}/tags', function(req, res) {
+    var tags = client.createTagStream(req.params.namespace+'/'+req.params.name)
+
+    pump(
+      tags,
+      through.obj(function(data, enc, cb) {
+        cb(null, [data.tag, data.id])
+      }),
+      JSONStream.stringifyObject(),
+      res
+    )
+  })
+
   server.get('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
     var tag = req.params.namespace+'/'+req.params.name+':'+req.params.tag
 
