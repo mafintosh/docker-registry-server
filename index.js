@@ -14,16 +14,14 @@ var zlib = require('zlib')
 var union = require('sorted-union-stream')
 var lexint = require('lexicographic-integer')
 var eos = require('end-of-stream')
-var union = require('sorted-union-stream')
 var crypto = require('crypto')
 var events = require('events')
 var util = require('util')
 
 var IGNORE_TAR_FILES = ['./', '.wh..wh.aufs', '.wh..wh.orph/', '.wh..wh.plnk/']
 
-var toTagKey = function(tag) {
-  tag = typeof tag === 'string' ? parse(tag) : tag
-  return (tag.namespace || 'library')+'/'+tag.repository+':'+(tag.tag || 'latest')
+var parseMaybe = function(tag) {
+  return tag && typeof tag === 'object' ? tag : parse(tag)
 }
 
 var toSortKey = function(data) {
@@ -281,7 +279,9 @@ Registry.prototype.get = function(id, cb) {
 
 Registry.prototype.resolve = function(tag, cb) {
   var self = this
-  this.db.tags.get(toTagKey(tag), {valueEncoding:'utf-8'}, function(err, id) {
+  var fullname = parseMaybe(tag).fullname
+
+  this.db.tags.get(fullname, {valueEncoding:'utf-8'}, function(err, id) {
     if (err && !err.notFound) return cb(err)
     if (id) return self.get(id, cb)
     if (tag.length !== 12) return cb(err)
@@ -335,8 +335,7 @@ Registry.prototype.createImageStream = function() {
 }
 
 Registry.prototype.createTagStream = function(tag) {
-  if (tag && typeof tag === 'string') tag = parse(tag)
-  if (!tag) tag = {}
+  tag = parseMaybe(tag || {})
 
   var prefix = ''
 
@@ -351,30 +350,35 @@ Registry.prototype.createTagStream = function(tag) {
       end: prefix+'\xff'
     }),
     through.obj(function(data, enc, cb) {
-      cb(null, {
-        tag: data.key,
-        id: data.value
-      })
+      var parsed = parse(data.key)
+      parsed.id = data.value
+      cb(null, parsed)
     })
   )
 }
 
 Registry.prototype.tag = function(id, tag, cb) {
   if (!cb) cb = noop
+
   var self = this
-  this.db.tags.put(toTagKey(tag), id, {valueEncoding:'utf-8'}, function(err) {
+  tag = parseMaybe(tag)
+
+  this.db.tags.put(tag.fullname, id, {valueEncoding:'utf-8'}, function(err) {
     if (err) return cb(err)
-    self.emit('tag', id, tag)
+    self.emit('tag', id, tag.name)
     cb()
   })
 }
 
 Registry.prototype.untag = function(id, tag, cb) {
   if (!cb) cb = noop
+
   var self = this
-  this.db.tags.del(toTagKey(tag), id, function(err) {
+  tag = parseMaybe(tag)
+
+  this.db.tags.del(tag.fullname, id, function(err) {
     if (err) return cb(err)
-    self.emit('untag', id, tag)
+    self.emit('untag', id, tag.name)
     cb()
   })
 }
