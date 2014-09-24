@@ -1,6 +1,6 @@
 {
   "name": "docker-registry-server",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "docker registry server implemented in node",
   "main": "index.js",
   "dependencies": {
