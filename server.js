@@ -11,6 +11,15 @@ module.exports = function() {
   // library paths
 
   server.client = client
+  server.setMaxListeners(0)
+
+  client.on('tag', function(id, tag) {
+    server.emit('event', {type:'tag', image:id, tag:tag})
+  })
+
+  client.on('untag', function(id, tag) {
+    server.emit('event', {type:'untag', image:id, tag:tag})
+  })
 
   server.all('/v1/repositories/{name}', '/v1/repositories/library/{name}')
   server.all('/v1/repositories/{name}/images', '/v1/repositories/library/{name}/images')
@@ -19,6 +28,20 @@ module.exports = function() {
   server.get('/v1/_ping', function(req, res) {
     res.setHeader('Content-Length', 4)
     res.end('true')
+  })
+
+  server.get('/v1/events', function(req, res) {
+    var stringify = JSONStream.stringify()
+    var onevent = function(e) {
+      stringify.write(e)
+    }
+
+    server.on('event', onevent)
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    req.setTimeout(0)
+    pump(stringify, res, function() {
+      server.removeListener('event', onevent)
+    })
   })
 
   server.put('/v1/repositories/{namespace}/{name}', function(req, res) {
@@ -68,6 +91,7 @@ module.exports = function() {
     var dir = req.params.glob
     if (!/\/$/.test(dir)) dir += '/'
 
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
     pump(
       client.createTreeStream(req.params.id, dir),
       through.obj(function(data, enc, cb) {
