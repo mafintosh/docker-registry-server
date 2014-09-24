@@ -2,10 +2,15 @@
 
 var registry = require('./server')
 var minimist = require('minimist')
+var fs = require('fs')
+var proc = require('child_process')
+var split = require('split2')
 
 var argv = minimist(process.argv, {alias:{p:'port'}})
 var server = registry()
 var client = server.client
+
+var noop = function() {}
 
 var shorten = function(id) {
   return id.slice(0,12)
@@ -13,6 +18,17 @@ var shorten = function(id) {
 
 client.on('tag', function(id, tag) {
   console.log('%s - tagged with %s', shorten(id), tag)
+  fs.exists('hooks/tag', function(exist) {
+    var child = proc.spawn('hooks/tag', [id, tag])
+
+    var ondata = function(data) {
+      console.log('%s - hooks/tag: %s', shorten(id), data)
+    }
+
+    child.on('error', noop)
+    child.stdout.pipe(split()).on('data', ondata)
+    child.stderr.pipe(split()).on('data', ondata)
+  })
 })
 
 client.on('layer', function(id, metadata) {
