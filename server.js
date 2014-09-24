@@ -2,6 +2,7 @@ var root = require('root')
 var JSONStream = require('JSONStream')
 var through = require('through2')
 var pump = require('pump')
+var cors = require('cors')
 var registry = require('./')
 
 module.exports = function() {
@@ -20,6 +21,8 @@ module.exports = function() {
   client.on('untag', function(id, tag) {
     server.emit('event', {type:'untag', image:id, tag:tag})
   })
+
+  server.all(cors())
 
   server.all('/v1/repositories/{name}', '/v1/repositories/library/{name}')
   server.all('/v1/repositories/{name}/images', '/v1/repositories/library/{name}/images')
