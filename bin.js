@@ -27,6 +27,10 @@ client.on('verify', function(id) {
   console.log('%s - verified using client checksum', shorten(id))
 })
 
+client.on('index', function(id) {
+  console.log('%s - indexed layer data', shorten(id))
+})
+
 server.listen(argv.port || process.env.PORT || 8000, function() {
   console.log('Server is listening on port '+server.address().port)
 })
