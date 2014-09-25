@@ -159,15 +159,26 @@ module.exports = function() {
     })
   })
 
-  server.get('/v1/repositories/{namespace}/{name}/images', function(req, res) {
-    res.send([]) // wat?
+  server.get('/v1/repositories/{namespace}/{name}/images', function(req, res) { // wat?
+    res.send([])
   })
 
-  server.put('/v1/repositories/{namespace}/{name}/images', function(req, res) {
-    req.on('json', function(data) { // wat?
+  server.put('/v1/repositories/{namespace}/{name}/images', function(req, res) { // wat?
+    req.on('json', function(data) {
       res.statusCode = 204
       res.end()
     })
+  })
+
+  server.get('/v1/repositories', function(req, res) {
+    pump(
+      client.createTagStream(),
+      through.obj(function(data, enc, cb) {
+        cb(null, [data.name, data.id])
+      }),
+      JSONStream.stringifyObject(),
+      res
+    )
   })
 
   server.error(function(req, res, err) {
