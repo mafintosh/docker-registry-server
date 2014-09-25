@@ -83,6 +83,17 @@ module.exports = function() {
     req.pipe(ws)
   })
 
+  server.get('/v1/images/{id}/ancestry', function(req, res) {
+    pump(
+      client.createAncestorStream(req.params.id),
+      through.obj(function(data, enc, cb) {
+        cb(null, data.id)
+      }),
+      JSONStream.stringify(),
+      res
+    )
+  })
+
   server.get('/v1/images/{id}/blobs/*', function(req, res) {
     pump(
       client.createBlobStream(req.params.id, req.params.glob),
@@ -148,8 +159,12 @@ module.exports = function() {
     })
   })
 
+  server.get('/v1/repositories/{namespace}/{name}/images', function(req, res) {
+    res.send([]) // wat?
+  })
+
   server.put('/v1/repositories/{namespace}/{name}/images', function(req, res) {
-    req.on('json', function(data) {
+    req.on('json', function(data) { // wat?
       res.statusCode = 204
       res.end()
     })
