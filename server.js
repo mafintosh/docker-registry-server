@@ -181,6 +181,13 @@ module.exports = function() {
     )
   })
 
+  server.get('/', function(req, res) {
+    res.send({
+      name: 'docker-registry-server',
+      version: require('./package.json').version
+    })
+  })
+
   server.error(function(req, res, err) {
     if (err.status) res.statusCode = err.status
     if (res.statusCode !== 404) console.error('Error: %s (%d)', err.message, res.statusCode)
