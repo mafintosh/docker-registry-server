@@ -110,13 +110,16 @@ Registry.prototype.createIndexingStream = function(id) {
 
     entries++
     batch.push({type:'put', key: toIndexKey(id, name), value: doc, valueEncoding: 'json'})
-    self.emit('index', id)
 
     if (entries % 64 === 0) flush(cb)
     else cb()
   })
 
   var stream = pumpify(zlib.createGunzip(), extract)
+
+  stream.on('finish', function() {
+    self.emit('index', id)
+  })
 
   stream.on('prefinish', function() {
     stream.cork()
