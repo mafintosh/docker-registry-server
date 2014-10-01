@@ -96,7 +96,7 @@ Registry.prototype.createIndexingStream = function(id) {
     if (!/^\//.test(entry.name)) entry.name = '/'+entry.name
 
     var doc = {
-      name: entry.name,
+      path: entry.name,
       type: entry.type,
       size: entry.size,
       mode: entry.mode,
@@ -105,11 +105,11 @@ Registry.prototype.createIndexingStream = function(id) {
       linkname: entry.linkname || undefined
     }
 
-    var name = doc.name
-    if (name !== '/') name = name.replace(/\/$/, '')
+    var path = doc.path
+    if (path !== '/') path = path.replace(/\/$/, '')
 
     entries++
-    batch.push({type:'put', key: toIndexKey(id, name), value: doc, valueEncoding: 'json'})
+    batch.push({type:'put', key: toIndexKey(id, path), value: doc, valueEncoding: 'json'})
 
     if (entries % 64 === 0) flush(cb)
     else cb()
