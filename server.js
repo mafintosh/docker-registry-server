@@ -108,11 +108,6 @@ module.exports = function() {
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     pump(
       client.createTreeStream(req.params.id, dir),
-      through.obj(function(data, enc, cb) {
-        if (data.type === 'directory') data.cd = 'http://'+req.headers.host+'/v1/images/'+req.params.id+'/tree'+data.name
-        else data.blob = 'http://'+req.headers.host+'/v1/images/'+data.image+'/blobs'+data.name
-        cb(null, data)
-      }),
       JSONStream.stringify(),
       res
     )
