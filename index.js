@@ -188,29 +188,56 @@ Registry.prototype.createLayerWriteStream = function(id, cb) {
 }
 
 Registry.prototype.createBlobStream = function(id, filename) {
-  var result = through()
-  var extract = tar.extract()
   var name = filename.replace(/^\//, '')
-  var found = false
+  var destroyed = false
+  var result = through()
+  var self = this
 
-  result.on('close', function() {
-    extract.destroy()
-  })
+  var resolve = function(cb) {
+    var tree = self.createTreeStream(id, name)
+    var result = null
 
-  var entry = function(entry, stream, next) {
-    if (entry.name.replace(/^\//, '') !== name) {
-      stream.resume()
-      return next()
-    }
+    tree.on('data', function(data) {
+      if (data.path.replace(/^\//, '') === name) result = data
+    })
 
-    found = true
-    pump(stream, result, function() {
-      extract.destroy()
+    eos(tree, function(err) {
+      if (err) return cb(err)
+      if (!result) return cb(error(404, 'Could not find blob '+filename+' from '+id))
+      cb(null, result)
     })
   }
 
-  pump(this.createLayerReadStream(id), zlib.createGunzip(), extract.on('entry', entry), function() {
-    if (!found) result.destroy(error(404, 'Could not find '+filename))
+  result.on('close', function() {
+    destroyed = true
+  })
+
+  resolve(function(err, resolved) {
+    if (destroyed) return
+    if (err) return result.destroy(err)
+
+    var extract = tar.extract()
+    var found = false
+
+    result.on('close', function() {
+      extract.destroy()
+    })
+
+    var entry = function(entry, stream, next) {
+      if (entry.name.replace(/^\//, '') !== name) {
+        stream.resume()
+        return next()
+      }
+
+      found = true
+      pump(stream, result, function() {
+        extract.destroy()
+      })
+    }
+
+    pump(self.createLayerReadStream(resolved.image), zlib.createGunzip(), extract.on('entry', entry), function() {
+      if (!found) result.destroy(error(404, 'Could not find '+filename))
+    })
   })
 
   return result
