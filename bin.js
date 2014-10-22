@@ -16,37 +16,54 @@ var shorten = function(id) {
   return id.slice(0,12)
 }
 
-client.on('tag', function(id, tag) {
-  console.log('%s - tagged with %s', shorten(id), tag)
-  fs.exists('hooks/tag', function(exist) {
-    var child = proc.spawn('hooks/tag', [id, tag])
+var hook = function(name, id, args) {
+  var onchild = function(child) {
+    console.log('%s - executing ./hooks/%s %s', shorten(id), name, args.join(' '))
 
     var ondata = function(data) {
-      console.log('%s - hooks/tag: %s', shorten(id), data)
+      console.log('%s - ./hooks/%s: %s', shorten(id), name, data)
     }
 
     child.on('error', noop)
     child.stdout.pipe(split()).on('data', ondata)
     child.stderr.pipe(split()).on('data', ondata)
+  }
+
+  var on = argv['on'+name]
+  var file = './hooks/'+name
+
+  if (on) return onchild(proc.spawn('/bin/bash', ['-c', on, name].concat(args)))
+
+  fs.exists(file, function(exist) {
+    if (exist) onchild(proc.spawn(file, args))
   })
+}
+
+client.on('tag', function(id, tag) {
+  console.log('%s - tagged with %s', shorten(id), tag)
+  hook('tag', id, [id, tag])
 })
 
 client.on('layer', function(id, metadata) {
   console.log('%s - added layer (%s)', shorten(id), metadata.checksum)
+  hook('layer', id, [id])
 })
 
 client.on('image', function(id, data) {
   console.log('%s - added image data', shorten(id))
+  hook('image', id, [id])
 })
 
 client.on('verify', function(id) {
   console.log('%s - verified using client checksum', shorten(id))
+  hook('verify', id, [id])
 })
 
 client.on('index', function(id) {
   console.log('%s - indexed layer data', shorten(id))
+  hook('index', id, [id])
 })
 
 server.listen(argv.port || process.env.PORT || 8000, function() {
-  console.log('Server is listening on port '+server.address().port)
+  console.log('Server is listening on port %d', server.address().port)
 })
