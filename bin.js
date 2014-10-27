@@ -2,11 +2,12 @@
 
 var registry = require('./server')
 var minimist = require('minimist')
+var peerca = require('peerca')
 var fs = require('fs')
 var proc = require('child_process')
 var split = require('split2')
 
-var argv = minimist(process.argv, {alias:{p:'port'}})
+var argv = minimist(process.argv, {alias:{p:'port', c:'cert'}})
 var server = registry()
 var client = server.client
 
@@ -64,6 +65,9 @@ client.on('index', function(id) {
   hook('index', id, [id])
 })
 
-server.listen(argv.port || process.env.PORT || 8000, function() {
+var ssl = argv.cert && peerca({host:argv.cert}).options()
+
+server.listen(argv.port || process.env.PORT || 8000, ssl, function() {
+  if (ssl) console.log('Using peerca certificate for %s', argv.cert)
   console.log('Server is listening on port %d', server.address().port)
 })
