@@ -8,6 +8,12 @@ var proc = require('child_process')
 var split = require('split2')
 
 var argv = minimist(process.argv, {alias:{p:'port', c:'cert'}})
+
+if (argv.help) {
+  console.log(fs.readFileSync(__dirname+'/help.txt', 'utf-8'))
+  process.exit(0)
+}
+
 var server = registry()
 var client = server.client
 
