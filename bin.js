@@ -36,7 +36,7 @@ var hook = function(name, id, args) {
     child.stderr.pipe(split()).on('data', ondata)
   }
 
-  var on = argv['on'+name]
+  var on = argv['on-'+name]
   var file = './hooks/'+name
 
   if (on) return onchild(proc.spawn('/bin/bash', ['-c', on, name].concat(args)))
