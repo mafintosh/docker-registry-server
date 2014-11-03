@@ -162,7 +162,7 @@ Registry.prototype.createLayerWriteStream = function(id, cb) {
     first = false
     self.db.images.get(id, {valueEncoding:'utf-8'}, function(err, val) {
       if (err) return cb(err)
-      sha.update(val.replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')+'\n') // crazy docker json
+      sha.update(val.replace(/>/g, '\\u003e').replace(/</g, '\\u003c').replace(/&/g, '\\u0026')+'\n') // hack for crazy docker json
       index(data, enc, cb)
     })
   }
