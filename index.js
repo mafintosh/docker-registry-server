@@ -272,8 +272,8 @@ Registry.prototype.createTreeStream = function(id, prefix) {
       .map(function(id) {
         var key = toIndexKey(id, prefix)
         return self.db.index.createReadStream({
-          start: key,
-          end: key+'~'
+          gte: key,
+          lt: key+'\xff'
         })
       })
       .reduce(function(a, b) {
@@ -317,7 +317,7 @@ Registry.prototype.resolve = function(tag, cb) {
     if (tag.length !== 12) return cb(err)
 
     var stream = self.db.images.createKeyStream({
-      start: tag,
+      gte: tag,
       limit: 1
     })
 
@@ -376,8 +376,8 @@ Registry.prototype.createTagStream = function(tag) {
   return pump(
     this.db.tags.createReadStream({
       valueEncoding:'utf-8',
-      start: prefix,
-      end: prefix+'\xff'
+      gte: prefix,
+      lt: prefix+'\xff'
     }),
     through.obj(function(data, enc, cb) {
       var parsed = parse(data.key)
