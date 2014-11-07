@@ -66,7 +66,7 @@ module.exports = function() {
   })
 
   server.put('/v1/images/{id}/json', function(req, res) {
-    req.on('json', function(image) {
+    req.on('body', function(image) { // use raw body to ensure JSON hash check works
       client.set(req.params.id, image, function(err) {
         if (err) return res.error(err)
         res.end()

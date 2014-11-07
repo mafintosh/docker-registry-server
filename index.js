@@ -162,7 +162,7 @@ Registry.prototype.createLayerWriteStream = function(id, cb) {
     first = false
     self.db.images.get(id, {valueEncoding:'utf-8'}, function(err, val) {
       if (err) return cb(err)
-      sha.update(val.replace(/>/g, '\\u003e').replace(/</g, '\\u003c').replace(/&/g, '\\u0026')+'\n') // hack for crazy docker json
+      sha.update(val+'\n')
       index(data, enc, cb)
     })
   }
@@ -289,9 +289,10 @@ Registry.prototype.createTreeStream = function(id, prefix) {
 Registry.prototype.set = function(id, data, cb) {
   if (!cb) cb = noop
   var self = this
-  this.db.images.put(id, data, {valueEncoding:'json'}, function(err) {
+  if (typeof data !== 'string' && !Buffer.isBuffer(data)) data = JSON.stringify(data)
+  this.db.images.put(id, data, function(err) {
     if (err) return cb(err)
-    self.emit('image', id, data)
+    self.emit('image', id, JSON.parse(data))
     cb()
   })
 }
