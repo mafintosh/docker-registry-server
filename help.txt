@@ -2,3 +2,4 @@ Usage: docker-registry-server [options]
 
   --port, -p  [port]       port to listen on
   --user, -u  [user:pass]  authenticate access
+  --on-{hook} [script]     specify a hook
