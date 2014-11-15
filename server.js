@@ -3,11 +3,48 @@ var JSONStream = require('JSONStream')
 var through = require('through2')
 var pump = require('pump')
 var cors = require('cors')
+var cookie = require('cookie-signature')
+var crypto = require('crypto')
+var auth = require('basic-auth')
 var registry = require('./')
 
-module.exports = function() {
+var authenticateAll = function(creds, cb) {
+  cb()
+}
+
+module.exports = function(opts) {
+  if (!opts) opts = {}
+
+  var secret = (opts.secret || crypto.randomBytes(64)).toString()
+  var authenticate = opts.authenticate || authenticateAll
   var client = registry()
   var server = root()
+
+  // auth stuff
+
+  var now = function() {
+    return (Date.now() / 1000) | 0
+  }
+
+  var login = function(req, res) {
+    res.statusCode = 401
+    res.setHeader('WWW-Authenticate', 'Token')
+    res.send({error: 'Requires authorization'})      
+  }
+
+  var token = function(req, res) {
+    var auth = req.headers.authorization
+    if (!auth || auth.slice(0, 6) !== 'Token ') return null
+
+    var token = cookie.unsign(auth.slice(6), secret)
+    if (!token) return null
+
+    var i = token.lastIndexOf('.')
+    if (i === -1) return null
+
+    if (!(Number(token.slice(i+1)) > now())) return null
+    return token.slice(0, i)
+  }
 
   // library paths
 
@@ -24,13 +61,44 @@ module.exports = function() {
 
   server.all(cors())
 
+  server.get('/v1/_ping', function(req, res) {
+    res.setHeader('Content-Length', 4)
+    res.end('true')
+  })
+
+  server.all(function(req, res, next) {
+    req.username = token(req)
+    if (req.username !== null) {
+      if (req.username) server.emit('verify', req.username)
+      return next()
+    }
+
+    var creds = auth(req)
+    if (creds) {
+      authenticate(creds, function(err, name) {
+        if (err) return login(req, res)
+        req.username = name || creds.name || ''
+        var token = cookie.sign(req.username+'.'+(now()+6*3600), secret)
+        res.setHeader('WWW-Authenticate', 'Token '+token)
+        res.setHeader('X-Docker-Token', token)
+        res.setHeader('X-Docker-Endpoints', req.headers.host)
+        if (req.username) server.emit('login', req.username)
+        next()
+      })
+      return
+    }
+
+    login(req, res)
+  })
+
   server.all('/v1/repositories/{name}', '/v1/repositories/library/{name}')
   server.all('/v1/repositories/{name}/images', '/v1/repositories/library/{name}/images')
   server.all('/v1/repositories/{name}/tags/*', '/v1/repositories/library/{name}/tags/{*}')
 
-  server.get('/v1/_ping', function(req, res) {
-    res.setHeader('Content-Length', 4)
-    res.end('true')
+  server.get('/v1/users', function(req, res) {
+    res.send({
+      username: req.username
+    })
   })
 
   server.get('/v1/events', function(req, res) {
@@ -49,9 +117,6 @@ module.exports = function() {
 
   server.put('/v1/repositories/{namespace}/{name}', function(req, res) {
     req.on('json', function() {
-      res.setHeader('WWW-Authenticate', 'Token signature=123abc,repository="test",access=write')
-      res.setHeader('X-Docker-Token', 'signature=123abc,repository="test",access=write')
-      res.setHeader('X-Docker-Endpoints', req.headers.host)
       res.end()
     })
   })

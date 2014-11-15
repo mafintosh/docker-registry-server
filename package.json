@@ -5,6 +5,8 @@
   "main": "index.js",
   "dependencies": {
     "JSONStream": "^0.8.4",
+    "basic-auth": "^1.0.0",
+    "cookie-signature": "^1.0.5",
     "cors": "^2.4.2",
     "docker-parse-image": "^3.0.1",
     "end-of-stream": "^1.1.0",

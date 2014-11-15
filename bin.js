@@ -7,14 +7,20 @@ var fs = require('fs')
 var proc = require('child_process')
 var split = require('split2')
 
-var argv = minimist(process.argv, {alias:{p:'port', c:'cert'}})
+var argv = minimist(process.argv, {alias:{p:'port', c:'cert', u:'user'}})
 
 if (argv.help) {
   console.log(fs.readFileSync(__dirname+'/help.txt', 'utf-8'))
   process.exit(0)
 }
 
-var server = registry()
+var users = [].concat(argv.user || [])
+var authenticate = !users.length ? null : function(user, cb) {
+  if (users.indexOf(user.name+':'+user.pass) === -1) return cb(new Error('Unknown user'))
+  cb()
+}
+
+var server = registry({authenticate:authenticate})
 var client = server.client
 
 var noop = function() {}
