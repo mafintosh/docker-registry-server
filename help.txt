@@ -1,4 +1,4 @@
 Usage: docker-registry-server [options]
 
-  --port, -p  [port]  port to listen on
-  --cert, -c  [host]  use peerca ssl certificate
+  --port, -p  [port]       port to listen on
+  --user, -u  [user:pass]  authenticate access
