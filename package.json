@@ -26,6 +26,7 @@
     "root": "^2.0.0",
     "sorted-union-stream": "^1.0.1",
     "split2": "^0.2.1",
+    "stream-collector": "^1.0.1",
     "tar-stream": "^1.0.0",
     "through2": "^0.6.2",
     "thunky": "^0.1.0",

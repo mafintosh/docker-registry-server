@@ -6,6 +6,7 @@ var pump = require('pump')
 var cors = require('cors')
 var cookie = require('cookie-signature')
 var crypto = require('crypto')
+var collect = require('stream-collector')
 var auth = require('basic-auth')
 var registry = require('./')
 
@@ -228,6 +229,20 @@ module.exports = function(opts) {
       client.tag(id, tag, function(err) {
         if (err) return res.error(err)
         res.end()
+      })
+    })
+  })
+
+  server.del('/v1/repositories/{namespace}/{name}/tags/{tag}', function(req, res) {
+    var tag = req.params.namespace+'/'+req.params.name+':'+req.params.tag
+
+    collect(client.createTagStream(tag), function(err, tags) {
+      if (err) return res.error(err)
+      if (!tags.length) return res.send("")
+
+      client.untag(tags[0].id, tag, function(err) {
+        if (err) return res.error(error)
+        res.send("")
       })
     })
   })
