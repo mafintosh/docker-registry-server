@@ -11,7 +11,7 @@ var auth = require('basic-auth')
 var registry = require('./')
 
 var authenticateAll = function(creds, cb) {
-  cb()
+  cb(null, 'anon')
 }
 
 module.exports = function(opts) {
@@ -88,7 +88,7 @@ module.exports = function(opts) {
     }
 
     var creds = auth(req)
-    if (creds) {
+    if (creds || authenticate === authenticateAll) {
       authenticate(creds, function(err, name) {
         if (err) return login(req, res)
         req.username = name || creds.name || ''
