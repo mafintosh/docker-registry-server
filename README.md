@@ -71,6 +71,14 @@ Fx if you have the same image as above and want to read `/root/package.json` do
 curl localhost:8000/v1/images/4a21b50675ba611ab0e9236c4f9430348d932ea3bf6e9b2af86b47eca9088320/tree/root/package.json
 ```
 
+#### `GET /v1/events`
+
+Get a newline delimited JSON stream on events from the registry. Use `type={name}` to limit the events you get.
+
+```
+curl localhost:8000/v1/events?type=tag
+```
+
 ## License
 
 MIT

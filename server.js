@@ -1,5 +1,6 @@
 var root = require('root')
 var JSONStream = require('JSONStream')
+var ndjson = require('ndjson')
 var through = require('through2')
 var pump = require('pump')
 var cors = require('cors')
@@ -52,11 +53,23 @@ module.exports = function(opts) {
   server.setMaxListeners(0)
 
   client.on('tag', function(id, tag) {
-    server.emit('event', {type:'tag', image:id, tag:tag})
+    server.emit('event', {type:'tag', id:id, tag:tag})
   })
 
   client.on('untag', function(id, tag) {
-    server.emit('event', {type:'untag', image:id, tag:tag})
+    server.emit('event', {type:'untag', id:id, tag:tag})
+  })
+
+  client.on('image', function(id, data) {
+    server.emit('event', {type:'image', id:id})
+  })
+
+  client.on('layer', function(id, metadata) {
+    server.emit('event', {type:'layer', id:id, checksum:metadata.checksum})
+  })
+
+  client.on('verify', function(id) {
+    server.emit('event', {type:'verify', id:id})
   })
 
   server.all(cors())
@@ -102,13 +115,13 @@ module.exports = function(opts) {
   })
 
   server.get('/v1/events', function(req, res) {
-    var stringify = JSONStream.stringify()
+    var stringify = ndjson.stringify()
+    var type = [].concat(req.query.type || [])
     var onevent = function(e) {
-      stringify.write(e)
+      if (!type.length || type.indexOf(e.type) > -1) stringify.write(e)
     }
 
     server.on('event', onevent)
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
     req.setTimeout(0)
     pump(stringify, res, function() {
       server.removeListener('event', onevent)

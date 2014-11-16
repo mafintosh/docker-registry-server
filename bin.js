@@ -56,6 +56,11 @@ client.on('tag', function(id, tag) {
   hook('tag', id, [id, tag])
 })
 
+client.on('untag', function(id, tag) {
+  console.log('%s - untagged with %s', shorten(id), tag)
+  hook('untag', id, [id, tag])
+})
+
 client.on('layer', function(id, metadata) {
   console.log('%s - added layer (%s)', shorten(id), metadata.checksum)
   hook('layer', id, [id])
