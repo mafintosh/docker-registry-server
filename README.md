@@ -6,6 +6,12 @@ Docker registry implemented in Node.
 npm install -g docker-registry-server
 ```
 
+You can also pull the docker image
+
+```
+docker pull mafintosh/docker-registry-server
+```
+
 ## Usage
 
 To start it run
