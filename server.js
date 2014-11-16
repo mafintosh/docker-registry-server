@@ -153,13 +153,17 @@ module.exports = function(opts) {
     })
   })
 
+  server.get('/v1/images/{id}/layer', function(req, res) {
+    pump(client.createLayerReadStream(req.params.id), res)
+  })
+
   server.put('/v1/images/{id}/layer', function(req, res) {
     var ws = client.createLayerWriteStream(req.params.id, function(err) {
       if (err) return cb(err)
       res.end()
     })
 
-    req.pipe(ws)
+    pump(req, ws)
   })
 
   server.get('/v1/images/{id}/ancestry', function(req, res) {
