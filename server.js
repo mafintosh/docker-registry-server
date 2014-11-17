@@ -8,6 +8,7 @@ var cookie = require('cookie-signature')
 var crypto = require('crypto')
 var collect = require('stream-collector')
 var auth = require('basic-auth')
+var relative = require('relative-date')
 var registry = require('./')
 
 var authenticateAll = function(creds, cb) {
@@ -21,6 +22,7 @@ module.exports = function(opts) {
   var authenticate = opts.authenticate || authenticateAll
   var client = registry()
   var server = root()
+  var started = new Date()
 
   // auth stuff
 
@@ -78,6 +80,14 @@ module.exports = function(opts) {
   server.get('/v1/_ping', function(req, res) {
     res.setHeader('Content-Length', 4)
     res.end('true')
+  })
+
+  server.get('/', function(req, res) {
+    res.send({
+      name: 'docker-registry-server',
+      version: require('./package.json').version,
+      status: 'Started '+relative(started)
+    })
   })
 
   server.all(function(req, res, next) {
@@ -271,13 +281,6 @@ module.exports = function(opts) {
       JSONStream.stringifyObject(),
       res
     )
-  })
-
-  server.get('/', function(req, res) {
-    res.send({
-      name: 'docker-registry-server',
-      version: require('./package.json').version
-    })
   })
 
   server.error(function(req, res, err) {
