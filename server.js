@@ -9,7 +9,7 @@ var crypto = require('crypto')
 var collect = require('stream-collector')
 var auth = require('basic-auth')
 var relative = require('relative-date')
-var registry = require('./')
+var registry = require('./registry')
 
 var authenticateAll = function(creds, cb) {
   cb(null, 'anon')
