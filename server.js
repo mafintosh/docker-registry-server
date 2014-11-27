@@ -20,7 +20,7 @@ module.exports = function(opts) {
 
   var secret = (opts.secret || crypto.randomBytes(64)).toString()
   var authenticate = opts.authenticate || authenticateAll
-  var client = registry()
+  var client = registry(opts)
   var server = root()
   var started = new Date()
 
