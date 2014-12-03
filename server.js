@@ -169,7 +169,7 @@ module.exports = function(opts) {
 
   server.put('/v1/images/{id}/layer', function(req, res) {
     var ws = client.createLayerWriteStream(req.params.id, function(err) {
-      if (err) return cb(err)
+      if (err) return res.error(err)
       res.end()
     })
 
