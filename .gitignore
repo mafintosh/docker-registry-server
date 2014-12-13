@@ -3,3 +3,4 @@ db
 layers
 hooks
 tmp
+.DS_Store
