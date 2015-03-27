@@ -6,7 +6,7 @@ var fs = require('fs')
 var proc = require('child_process')
 var split = require('split2')
 
-var argv = minimist(process.argv, {alias:{p:'port', c:'cert', u:'user'}})
+var argv = minimist(process.argv, {alias:{p:'port', c:'cert', u:'user', d:'dir'}})
 
 if (argv.help) {
   console.log(fs.readFileSync(__dirname+'/help.txt', 'utf-8'))
@@ -19,7 +19,7 @@ var authenticate = !users.length ? null : function(user, cb) {
   cb()
 }
 
-var server = registry({authenticate:authenticate})
+var server = registry({authenticate:authenticate, dir: argv.dir})
 var client = server.client
 
 var noop = function() {}
@@ -86,5 +86,5 @@ var ports = [].concat(argv.port || process.env.PORT || 8000)
 ports.forEach(function(port) {
   server.listen(port, function() {
     console.log('Server is listening on port %d', port || server.address().port)
-  })  
+  })
 })

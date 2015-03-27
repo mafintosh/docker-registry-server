@@ -1,5 +1,6 @@
 Usage: docker-registry-server [options]
 
   --port, -p  [port]       port to listen on
+  --dir,  -d  [directory]  set directory to store data in
   --user, -u  [user:pass]  authenticate access
   --on-{hook} [script]     specify a hook
